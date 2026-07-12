@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product
+    Id="*"
+    Name="Daily Bookkeeping"
+    Language="1033"
+    Version="0.1.0"
+    Manufacturer="Codex"
+    UpgradeCode="d2ea56b5-7cdc-43ab-a56c-ec4e0f7649bf">
+    <Package
+      InstallerVersion="500"
+      Compressed="yes"
+      InstallScope="perMachine"
+      Description="Daily Bookkeeping desktop installer" />
+
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of Daily Bookkeeping is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <UIRef Id="WixUI_InstallDir" />
+    <UIRef Id="WixUI_ErrorProgressText" />
+
+    <Icon Id="AppIcon.ico" SourceFile="..\src-tauri\icons\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFilesFolder">
+        <Directory Id="INSTALLFOLDER" Name="DailyBookkeeping" />
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="Daily Bookkeeping" />
+      </Directory>
+      <Directory Id="DesktopFolder" />
+    </Directory>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="MainExecutableComponent" Guid="1d5fbc6c-c693-4a07-8ba4-6ac801fba0fc">
+        <File
+          Id="MainExecutable"
+          Source="..\src-tauri\target\release\daily-bookkeeping.exe"
+          KeyPath="yes" />
+
+        <Shortcut
+          Id="DesktopShortcut"
+          Directory="DesktopFolder"
+          Name="Daily Bookkeeping"
+          WorkingDirectory="INSTALLFOLDER"
+          Icon="AppIcon.ico"
+          IconIndex="0"
+          Advertise="yes" />
+
+        <Shortcut
+          Id="StartMenuShortcut"
+          Directory="ApplicationProgramsFolder"
+          Name="Daily Bookkeeping"
+          WorkingDirectory="INSTALLFOLDER"
+          Icon="AppIcon.ico"
+          IconIndex="0"
+          Advertise="yes" />
+
+        <RegistryValue
+          Root="HKLM"
+          Key="Software\Codex\DailyBookkeeping"
+          Name="installed"
+          Type="integer"
+          Value="1"
+          KeyPath="no" />
+
+        <RemoveFile
+          Id="CleanProgramMenuFolder"
+          Directory="ApplicationProgramsFolder"
+          Name="*"
+          On="uninstall" />
+        <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="MainFeature" Title="Daily Bookkeeping" Level="1">
+      <ComponentRef Id="MainExecutableComponent" />
+    </Feature>
+  </Product>
+</Wix>
