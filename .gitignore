@@ -2,3 +2,7 @@ node_modules
 dist
 target
 src-tauri/target
+.tools/
+*.zip
+*.msi
+installer/dist/
