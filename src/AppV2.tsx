@@ -1,15 +1,23 @@
-// @ts-nocheck
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import {
+  createCustomLevel1,
+  createCustomLevel2,
   createTransaction,
+  deleteCustomLevel1,
+  deleteCustomLevel2,
   deleteTransaction,
+  listCategoryGroups,
   listTransactions,
+  renameCustomLevel1,
+  renameCustomLevel2,
   updateTransaction
-} from "./api";
-import { getCategoryGroups } from "./data";
+} from "./clientApi";
 import type {
+  CategoryGroup,
+  CategoryLevel2,
+  CreateCustomLevel1Payload,
   TransactionPayload,
   TransactionRecord,
   TransactionType
@@ -26,13 +34,16 @@ const navItems = [
   { to: "/", label: "首页" },
   { to: "/new", label: "新增记录" },
   { to: "/transactions", label: "收支明细" },
-  { to: "/stats", label: "收支统计" }
+  { to: "/stats", label: "收支统计" },
+  { to: "/categories", label: "分类管理" }
 ];
 
 const pieColors = ["#ff7a59", "#5b8def", "#2cb67d", "#f4b740", "#8a5cf6", "#ff5d8f"];
 
-function App() {
+function AppV2() {
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
+  const [expenseGroups, setExpenseGroups] = useState<CategoryGroup[]>([]);
+  const [incomeGroups, setIncomeGroups] = useState<CategoryGroup[]>([]);
   const [isQuickEntryOpen, setIsQuickEntryOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -66,21 +77,36 @@ function App() {
     transactions.find((item) => item.id === selectedId) ?? transactions[0];
 
   useEffect(() => {
-    void refreshTransactions();
+    void refreshAll();
   }, []);
 
-  async function refreshTransactions() {
+  async function refreshAll() {
     setIsLoading(true);
     setErrorMessage("");
     try {
-      const records = await listTransactions();
+      const [records, nextExpenseGroups, nextIncomeGroups] = await Promise.all([
+        listTransactions(),
+        listCategoryGroups("expense"),
+        listCategoryGroups("income")
+      ]);
       setTransactions(records);
+      setExpenseGroups(nextExpenseGroups);
+      setIncomeGroups(nextIncomeGroups);
       setSelectedId(records[0]?.id ?? null);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, "加载收支记录失败"));
+      setErrorMessage(getErrorMessage(error, "加载数据失败"));
     } finally {
       setIsLoading(false);
     }
+  }
+
+  async function refreshCategories() {
+    const [nextExpenseGroups, nextIncomeGroups] = await Promise.all([
+      listCategoryGroups("expense"),
+      listCategoryGroups("income")
+    ]);
+    setExpenseGroups(nextExpenseGroups);
+    setIncomeGroups(nextIncomeGroups);
   }
 
   async function handleCreateTransaction(payload: TransactionPayload) {
@@ -125,6 +151,11 @@ function App() {
     }
   }
 
+  const allCategoryGroups = {
+    expense: expenseGroups,
+    income: incomeGroups
+  };
+
   return (
     <div className="app-shell">
       <div className="ambient ambient-a" />
@@ -138,9 +169,9 @@ function App() {
           </div>
           <div>
             <p className="eyebrow">每日记账</p>
-            <h1>用更有情绪感的收支面板，把每天的钱流看清楚</h1>
+            <h1>把每天的收入、支出和分类都放在一个容易看懂的桌面账本里。</h1>
             <p className="topbar-copy">
-              现在支持收入和支出双向记录，页面也升级成更丰富的动画卡片风格。
+              现在已经支持收入支出双向记账，也支持系统分类加用户自定义分类并存。
             </p>
           </div>
         </div>
@@ -190,6 +221,7 @@ function App() {
               <TransactionFormPage
                 title="新增收支记录"
                 description="这里保留完整录入页，支持收入和支出两种记录，也会根据类型切换分类。"
+                categoryGroups={allCategoryGroups}
                 onSubmit={handleCreateTransaction}
               />
             }
@@ -201,6 +233,7 @@ function App() {
                 transactions={transactions}
                 selectedId={selectedId}
                 selectedTransaction={selectedTransaction}
+                categoryGroups={allCategoryGroups}
                 onSelect={setSelectedId}
                 onDelete={handleDeleteTransaction}
                 onUpdate={handleUpdateTransaction}
@@ -218,6 +251,16 @@ function App() {
               />
             }
           />
+          <Route
+            path="/categories"
+            element={
+              <CategoryManagementPage
+                categoryGroups={allCategoryGroups}
+                onRefresh={refreshCategories}
+                onError={(message) => setErrorMessage(message)}
+              />
+            }
+          />
         </Routes>
       </main>
 
@@ -227,6 +270,7 @@ function App() {
             <TransactionForm
               title="快速新增记录"
               compact
+              categoryGroups={allCategoryGroups}
               onSubmit={handleCreateTransaction}
               onCancel={() => setIsQuickEntryOpen(false)}
             />
@@ -267,13 +311,13 @@ function DashboardPage({
       <section className="hero-card animated-rise">
         <div className="hero-content">
           <div className="hero-badges">
-            <StatusPill label="动画风格" />
+            <StatusPill label="桌面账本" />
             <StatusPill label="双向记账" />
-            <StatusPill label="本地保存" />
+            <StatusPill label="可自定义分类" />
           </div>
-          <h2>收入、支出、结余，放在一个会动的仪表盘里。</h2>
+          <h2>收入、支出、结余，放在一个会动的仪表板里。</h2>
           <p className="hero-copy">
-            首页现在更像一个有层次的财务驾驶舱。你可以快速录入，也能立刻看到今天和本月的收支状态。
+            首页会把今天和本月的收支状态集中展示出来，最近记录和分类分布也能一起看到。
           </p>
           <div className="hero-actions">
             <button className="primary-button large-button" onClick={onOpenQuickEntry}>
@@ -282,7 +326,7 @@ function DashboardPage({
             </button>
             <div className="hero-note">
               <ClockIcon />
-              <span>{isLoading ? "正在同步数据..." : `已载入 ${transactions.length} 笔记录`}</span>
+              <span>{isLoading ? "正在同步数据..." : `已加载 ${transactions.length} 笔记录`}</span>
             </div>
           </div>
         </div>
@@ -346,11 +390,7 @@ function DashboardPage({
         </article>
 
         <article className="panel animated-rise delay-2">
-          <SectionTitle
-            title="本月分类摘要"
-            caption="支出与收入"
-            icon={<CategoryIcon />}
-          />
+          <SectionTitle title="本月分类摘要" caption="支出与收入分开统计" icon={<CategoryIcon />} />
           <div className="summary-section">
             <h4>
               <ExpenseIcon />
@@ -410,7 +450,7 @@ function DashboardPage({
         <article className="insight-card animated-rise delay-4">
           <div className="insight-header">
             <BalanceIcon />
-            <span>现金感受</span>
+            <span>现金状态</span>
           </div>
           <strong>{monthBalance >= 0 ? "正向积累" : "本月超支"}</strong>
           <p>结余 {formatCurrency(monthBalance)}</p>
@@ -423,10 +463,12 @@ function DashboardPage({
 function TransactionFormPage({
   title,
   description,
+  categoryGroups,
   onSubmit
 }: {
   title: string;
   description: string;
+  categoryGroups: Record<TransactionType, CategoryGroup[]>;
   onSubmit: (payload: TransactionPayload) => Promise<void>;
 }) {
   return (
@@ -435,13 +477,14 @@ function TransactionFormPage({
         <h2>{title}</h2>
         <p>{description}</p>
       </div>
-      <TransactionForm title={title} onSubmit={onSubmit} />
+      <TransactionForm title={title} categoryGroups={categoryGroups} onSubmit={onSubmit} />
     </section>
   );
 }
 
 function TransactionForm({
   title,
+  categoryGroups,
   compact = false,
   initialValue,
   submitLabel = "保存记录",
@@ -449,6 +492,7 @@ function TransactionForm({
   onCancel
 }: {
   title: string;
+  categoryGroups: Record<TransactionType, CategoryGroup[]>;
   compact?: boolean;
   initialValue?: TransactionRecord;
   submitLabel?: string;
@@ -460,19 +504,19 @@ function TransactionForm({
   const [transactionDate, setTransactionDate] = useState(
     initialValue?.transactionDate ?? getTodayDate()
   );
-  const initialGroups = getCategoryGroups(initialValue?.type ?? "expense");
+
+  const initialGroups = categoryGroups[initialValue?.type ?? "expense"];
   const [categoryLevel1, setCategoryLevel1] = useState(
-    initialValue?.categoryLevel1 ?? initialGroups[0].level1
+    initialValue?.categoryLevel1 ?? initialGroups[0]?.level1 ?? ""
   );
   const [categoryLevel2, setCategoryLevel2] = useState(
-    initialValue?.categoryLevel2 ?? initialGroups[0].level2[0]
+    initialValue?.categoryLevel2 ?? initialGroups[0]?.level2Items[0]?.name ?? ""
   );
   const [note, setNote] = useState(initialValue?.note ?? "");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const categoryGroups = getCategoryGroups(type);
-  const currentGroup =
-    categoryGroups.find((item) => item.level1 === categoryLevel1) ?? categoryGroups[0];
+  const groups = categoryGroups[type];
+  const currentGroup = groups.find((item) => item.level1 === categoryLevel1) ?? groups[0];
 
   useEffect(() => {
     if (initialValue) {
@@ -486,23 +530,33 @@ function TransactionForm({
   }, [initialValue]);
 
   useEffect(() => {
-    const groups = getCategoryGroups(type);
-    const firstGroup = groups[0];
-    if (!groups.some((item) => item.level1 === categoryLevel1)) {
-      setCategoryLevel1(firstGroup.level1);
-      setCategoryLevel2(firstGroup.level2[0]);
+    const nextGroups = categoryGroups[type];
+    const firstGroup = nextGroups[0];
+    if (!firstGroup) {
+      setCategoryLevel1("");
+      setCategoryLevel2("");
       return;
     }
 
-    const matched = groups.find((item) => item.level1 === categoryLevel1) ?? firstGroup;
-    if (!matched.level2.includes(categoryLevel2)) {
-      setCategoryLevel2(matched.level2[0]);
+    const matchedGroup =
+      nextGroups.find((item) => item.level1 === categoryLevel1) ?? firstGroup;
+    if (!nextGroups.some((item) => item.level1 === categoryLevel1)) {
+      setCategoryLevel1(matchedGroup.level1);
+      setCategoryLevel2(matchedGroup.level2Items[0]?.name ?? "");
+      return;
     }
-  }, [type, categoryLevel1, categoryLevel2]);
+
+    if (!matchedGroup.level2Items.some((item) => item.name === categoryLevel2)) {
+      setCategoryLevel2(matchedGroup.level2Items[0]?.name ?? "");
+    }
+  }, [type, categoryGroups, categoryLevel1, categoryLevel2]);
 
   async function submit() {
     const parsedAmount = Number(amount);
     if (!parsedAmount || parsedAmount <= 0) {
+      return;
+    }
+    if (!categoryLevel1 || !categoryLevel2) {
       return;
     }
 
@@ -518,12 +572,12 @@ function TransactionForm({
       });
 
       if (!initialValue) {
-        const resetGroups = getCategoryGroups("expense");
+        const resetGroups = categoryGroups.expense;
         setType("expense");
         setAmount("");
         setTransactionDate(getTodayDate());
-        setCategoryLevel1(resetGroups[0].level1);
-        setCategoryLevel2(resetGroups[0].level2[0]);
+        setCategoryLevel1(resetGroups[0]?.level1 ?? "");
+        setCategoryLevel2(resetGroups[0]?.level2Items[0]?.name ?? "");
         setNote("");
       }
     } finally {
@@ -531,22 +585,19 @@ function TransactionForm({
     }
   }
 
+  const canSubmit = Boolean(currentGroup && categoryLevel2);
+
   return (
     <div className={`form-card animated-rise${compact ? " compact" : ""}`}>
       <SectionTitle
         title={title}
-        caption="现在支持收入和支出两种记录"
+        caption="系统分类不能改，自定义分类可以在分类管理里维护。"
         icon={<SparkIcon />}
       />
       <div className="type-switch">
         <button
           className={`type-chip${type === "expense" ? " active expense" : ""}`}
-          onClick={() => {
-            const nextGroups = getCategoryGroups("expense");
-            setType("expense");
-            setCategoryLevel1(nextGroups[0].level1);
-            setCategoryLevel2(nextGroups[0].level2[0]);
-          }}
+          onClick={() => setType("expense")}
           type="button"
         >
           <ExpenseIcon />
@@ -554,12 +605,7 @@ function TransactionForm({
         </button>
         <button
           className={`type-chip${type === "income" ? " active income" : ""}`}
-          onClick={() => {
-            const nextGroups = getCategoryGroups("income");
-            setType("income");
-            setCategoryLevel1(nextGroups[0].level1);
-            setCategoryLevel2(nextGroups[0].level2[0]);
-          }}
+          onClick={() => setType("income")}
           type="button"
         >
           <IncomeIcon />
@@ -592,13 +638,13 @@ function TransactionForm({
             onChange={(event) => {
               const nextLevel1 = event.target.value;
               const nextGroup =
-                categoryGroups.find((item) => item.level1 === nextLevel1) ?? categoryGroups[0];
+                groups.find((item) => item.level1 === nextLevel1) ?? groups[0];
               setCategoryLevel1(nextLevel1);
-              setCategoryLevel2(nextGroup.level2[0]);
+              setCategoryLevel2(nextGroup?.level2Items[0]?.name ?? "");
             }}
           >
-            {categoryGroups.map((item) => (
-              <option key={item.level1} value={item.level1}>
+            {groups.map((item) => (
+              <option key={item.level1Id} value={item.level1}>
                 {item.level1}
               </option>
             ))}
@@ -610,9 +656,9 @@ function TransactionForm({
             value={categoryLevel2}
             onChange={(event) => setCategoryLevel2(event.target.value)}
           >
-            {currentGroup.level2.map((item) => (
-              <option key={item} value={item}>
-                {item}
+            {currentGroup?.level2Items.map((item) => (
+              <option key={item.id} value={item.name}>
+                {item.name}
               </option>
             ))}
           </select>
@@ -623,7 +669,7 @@ function TransactionForm({
             value={note}
             onChange={(event) => setNote(event.target.value)}
             rows={compact ? 3 : 4}
-            placeholder={type === "income" ? "例如：7 月工资到账" : "例如：午饭、打车、买药"}
+            placeholder={type === "income" ? "例如：月工资到账" : "例如：午餐、打车、买药"}
           />
         </label>
       </div>
@@ -633,7 +679,11 @@ function TransactionForm({
             取消
           </button>
         ) : null}
-        <button className="primary-button large-button" onClick={() => void submit()} disabled={isSubmitting}>
+        <button
+          className="primary-button large-button"
+          onClick={() => void submit()}
+          disabled={isSubmitting || !canSubmit}
+        >
           <CheckIcon />
           {isSubmitting ? "保存中..." : submitLabel}
         </button>
@@ -646,6 +696,7 @@ function TransactionListPage({
   transactions,
   selectedId,
   selectedTransaction,
+  categoryGroups,
   onSelect,
   onDelete,
   onUpdate
@@ -653,6 +704,7 @@ function TransactionListPage({
   transactions: TransactionRecord[];
   selectedId: number | null;
   selectedTransaction?: TransactionRecord;
+  categoryGroups: Record<TransactionType, CategoryGroup[]>;
   onSelect: (id: number) => void;
   onDelete: (id: number) => Promise<void>;
   onUpdate: (id: number, payload: TransactionPayload) => Promise<void>;
@@ -682,7 +734,7 @@ function TransactionListPage({
       <article className="panel animated-rise">
         <SectionTitle
           title="收支明细"
-          caption="可以筛选收入或支出，也能在这里直接编辑"
+          caption="可以筛选收入或支出，也能在这里直接编辑。"
           icon={<ListIcon />}
         />
         <div className="filter-bar">
@@ -749,16 +801,13 @@ function TransactionListPage({
       </article>
 
       <aside className="panel detail-panel animated-rise delay-2">
-        <SectionTitle
-          title="记录详情"
-          caption="点击一条记录后，在这里查看或编辑"
-          icon={<InfoIcon />}
-        />
+        <SectionTitle title="记录详情" caption="点一条记录后，在这里查看或编辑。" icon={<InfoIcon />} />
         {selectedTransaction ? (
           isEditing ? (
             <TransactionForm
               title="编辑记录"
               initialValue={selectedTransaction}
+              categoryGroups={categoryGroups}
               submitLabel="保存修改"
               onSubmit={async (payload) => {
                 await onUpdate(selectedTransaction.id, payload);
@@ -836,11 +885,7 @@ function StatsPage({
   return (
     <section className="stack-page">
       <div className="panel animated-rise">
-        <SectionTitle
-          title="收支统计"
-          caption="用图表和图标把本月的收支结构讲清楚"
-          icon={<ChartIcon />}
-        />
+        <SectionTitle title="收支统计" caption="用图表把本月的收支结构看清楚。" icon={<ChartIcon />} />
 
         <section className="stats-grid">
           <MetricCard label="本月收入" value={formatCurrency(monthIncome)} accent="income" icon={<IncomeIcon />} />
@@ -858,7 +903,7 @@ function StatsPage({
         <article className="panel chart-panel animated-rise delay-1">
           <SectionTitle
             title="分类占比"
-            caption={expenseSummary.length > 0 ? "当前展示支出图表" : "当前展示收入图表"}
+            caption={expenseSummary.length > 0 ? "当前显示支出图表" : "当前显示收入图表"}
             icon={<ChartIcon />}
           />
           <div className="chart-box">
@@ -886,11 +931,7 @@ function StatsPage({
         </article>
 
         <article className="panel animated-rise delay-2">
-          <SectionTitle
-            title="分类金额列表"
-            caption="收入和支出分别汇总"
-            icon={<CategoryIcon />}
-          />
+          <SectionTitle title="分类金额列表" caption="收入和支出分开汇总。" icon={<CategoryIcon />} />
           <div className="summary-section">
             <h4>
               <ExpenseIcon />
@@ -929,6 +970,257 @@ function StatsPage({
           </div>
         </article>
       </section>
+    </section>
+  );
+}
+
+function CategoryManagementPage({
+  categoryGroups,
+  onRefresh,
+  onError
+}: {
+  categoryGroups: Record<TransactionType, CategoryGroup[]>;
+  onRefresh: () => Promise<void>;
+  onError: (message: string) => void;
+}) {
+  const [type, setType] = useState<TransactionType>("expense");
+  const [level1Name, setLevel1Name] = useState("");
+  const [initialLevel2Name, setInitialLevel2Name] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const groups = categoryGroups[type];
+
+  async function handleCreateLevel1() {
+    const payload: CreateCustomLevel1Payload = {
+      type,
+      level1Name,
+      initialLevel2Name
+    };
+
+    setIsSubmitting(true);
+    try {
+      await createCustomLevel1(payload);
+      setLevel1Name("");
+      setInitialLevel2Name("");
+      await onRefresh();
+    } catch (error) {
+      onError(getErrorMessage(error, "新增一级分类失败"));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleAddLevel2(group: CategoryGroup) {
+    const name = window.prompt(`给“${group.level1}”新增二级分类`, "");
+    if (!name) {
+      return;
+    }
+
+    try {
+      await createCustomLevel2({ level1Id: group.level1Id, name });
+      await onRefresh();
+    } catch (error) {
+      onError(getErrorMessage(error, "新增二级分类失败"));
+    }
+  }
+
+  async function handleRenameLevel1(group: CategoryGroup) {
+    const nextName = window.prompt("请输入新的一级分类名称", group.level1);
+    if (!nextName || nextName === group.level1) {
+      return;
+    }
+
+    try {
+      await renameCustomLevel1({ id: group.level1Id, name: nextName });
+      await onRefresh();
+    } catch (error) {
+      onError(getErrorMessage(error, "修改一级分类失败"));
+    }
+  }
+
+  async function handleRenameLevel2(level2: CategoryLevel2) {
+    const nextName = window.prompt("请输入新的二级分类名称", level2.name);
+    if (!nextName || nextName === level2.name) {
+      return;
+    }
+
+    try {
+      await renameCustomLevel2({ id: level2.id, name: nextName });
+      await onRefresh();
+    } catch (error) {
+      onError(getErrorMessage(error, "修改二级分类失败"));
+    }
+  }
+
+  async function handleDeleteLevel1(group: CategoryGroup) {
+    const confirmed = window.confirm(
+      `确认删除自定义一级分类“${group.level1}”吗？它下面的自定义二级分类也会一起移除。`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await deleteCustomLevel1(group.level1Id);
+      await onRefresh();
+    } catch (error) {
+      onError(getErrorMessage(error, "删除一级分类失败"));
+    }
+  }
+
+  async function handleDeleteLevel2(level2: CategoryLevel2) {
+    const confirmed = window.confirm(`确认删除自定义二级分类“${level2.name}”吗？`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await deleteCustomLevel2(level2.id);
+      await onRefresh();
+    } catch (error) {
+      onError(getErrorMessage(error, "删除二级分类失败"));
+    }
+  }
+
+  return (
+    <section className="stack-page">
+      <article className="panel animated-rise">
+        <SectionTitle
+          title="分类管理"
+          caption="系统预置分类只读。你可以新增、修改、删除自己创建的分类。"
+          icon={<CategoryIcon />}
+        />
+
+        <div className="type-switch">
+          <button
+            className={`type-chip${type === "expense" ? " active expense" : ""}`}
+            type="button"
+            onClick={() => setType("expense")}
+          >
+            <ExpenseIcon />
+            管理支出分类
+          </button>
+          <button
+            className={`type-chip${type === "income" ? " active income" : ""}`}
+            type="button"
+            onClick={() => setType("income")}
+          >
+            <IncomeIcon />
+            管理收入分类
+          </button>
+        </div>
+
+        <div className="form-grid">
+          <label>
+            <span>新的一级分类名称</span>
+            <input
+              value={level1Name}
+              onChange={(event) => setLevel1Name(event.target.value)}
+              placeholder="例如：宠物开销"
+            />
+          </label>
+          <label>
+            <span>这个一级分类下的第一个二级分类</span>
+            <input
+              value={initialLevel2Name}
+              onChange={(event) => setInitialLevel2Name(event.target.value)}
+              placeholder="例如：宠物食品"
+            />
+          </label>
+        </div>
+        <div className="action-row align-start">
+          <button
+            className="primary-button"
+            type="button"
+            onClick={() => void handleCreateLevel1()}
+            disabled={isSubmitting || !level1Name.trim() || !initialLevel2Name.trim()}
+          >
+            <PlusIcon />
+            新增自定义一级分类
+          </button>
+        </div>
+      </article>
+
+      <article className="panel animated-rise delay-1">
+        <SectionTitle
+          title={type === "expense" ? "支出分类列表" : "收入分类列表"}
+          caption="带锁的是系统分类，只能查看；带铅笔和删除按钮的是你的自定义分类。"
+          icon={<FolderIcon />}
+        />
+
+        <div className="category-manage-list">
+          {groups.map((group) => (
+            <div key={group.level1Id} className="category-manage-card">
+              <div className="category-manage-head">
+                <div className="category-manage-title">
+                  <strong>{group.level1}</strong>
+                  <span className={`source-badge ${group.level1Source}`}>
+                    {group.level1Source === "system" ? (
+                      <>
+                        <LockIcon />
+                        系统
+                      </>
+                    ) : (
+                      <>
+                        <UserIcon />
+                        自定义
+                      </>
+                    )}
+                  </span>
+                </div>
+                <div className="category-manage-actions">
+                  <button className="ghost-button small-button" type="button" onClick={() => void handleAddLevel2(group)}>
+                    <PlusIcon />
+                    新增二级分类
+                  </button>
+                  {group.level1Source === "custom" ? (
+                    <>
+                      <button
+                        className="ghost-button small-button"
+                        type="button"
+                        onClick={() => void handleRenameLevel1(group)}
+                      >
+                        <EditIcon />
+                        改名
+                      </button>
+                      <button
+                        className="danger-button small-button"
+                        type="button"
+                        onClick={() => void handleDeleteLevel1(group)}
+                      >
+                        <TrashIcon />
+                        删除
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="level2-list">
+                {group.level2Items.map((level2) => (
+                  <div key={level2.id} className={`level2-chip ${level2.source}`}>
+                    <span>{level2.name}</span>
+                    {level2.source === "custom" ? (
+                      <span className="level2-chip-actions">
+                        <button type="button" onClick={() => void handleRenameLevel2(level2)}>
+                          改名
+                        </button>
+                        <button type="button" onClick={() => void handleDeleteLevel2(level2)}>
+                          删除
+                        </button>
+                      </span>
+                    ) : (
+                      <span className="level2-chip-lock">
+                        <LockIcon />
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </article>
     </section>
   );
 }
@@ -1096,6 +1388,32 @@ function CategoryIcon() {
   );
 }
 
+function FolderIcon() {
+  return (
+    <IconBase>
+      <path d="M3 8.5A2.5 2.5 0 0 1 5.5 6H10l2 2h6.5A2.5 2.5 0 0 1 21 10.5v7A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z" />
+    </IconBase>
+  );
+}
+
+function LockIcon() {
+  return (
+    <IconBase>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V8a4 4 0 1 1 8 0v3" />
+    </IconBase>
+  );
+}
+
+function UserIcon() {
+  return (
+    <IconBase>
+      <circle cx="12" cy="8" r="3.2" />
+      <path d="M5 19a7 7 0 0 1 14 0" />
+    </IconBase>
+  );
+}
+
 function InfoIcon() {
   return (
     <IconBase>
@@ -1155,4 +1473,4 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-export default App;
+export default AppV2;

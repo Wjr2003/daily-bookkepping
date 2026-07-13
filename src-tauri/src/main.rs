@@ -1,7 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod categories;
+
 use std::{fs, path::PathBuf};
 
+use categories::{
+    create_custom_level1, create_custom_level2, delete_custom_level1, delete_custom_level2,
+    initialize_categories, list_category_groups, rename_custom_level1, rename_custom_level2,
+};
 use chrono::Utc;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -40,13 +46,21 @@ fn main() {
     tauri::Builder::default()
         .setup(|app| {
             initialize_database(&app.handle())?;
+            initialize_categories(&app.handle())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             list_transactions,
             create_transaction,
             update_transaction,
-            delete_transaction
+            delete_transaction,
+            list_category_groups,
+            create_custom_level1,
+            create_custom_level2,
+            rename_custom_level1,
+            rename_custom_level2,
+            delete_custom_level1,
+            delete_custom_level2
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -205,9 +219,13 @@ fn initialize_database(app: &AppHandle) -> AppResult<()> {
     Ok(())
 }
 
-fn open_connection(app: &AppHandle) -> AppResult<Connection> {
+pub(crate) fn open_connection(app: &AppHandle) -> AppResult<Connection> {
     let database_path = database_path(app)?;
-    Connection::open(database_path).map_err(|error| error.to_string())
+    let connection = Connection::open(database_path).map_err(|error| error.to_string())?;
+    connection
+        .execute_batch("PRAGMA foreign_keys = ON;")
+        .map_err(|error| error.to_string())?;
+    Ok(connection)
 }
 
 fn database_path(app: &AppHandle) -> AppResult<PathBuf> {
